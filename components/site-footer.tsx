@@ -20,7 +20,7 @@ export default function SiteFooter() {
     <footer className="site-footer">
       <div className="footer-inner">
         <div className="footer-block">
-          <p className="dev-name">Developed by Shahryar</p>
+          <p className="dev-name">Developed by Shahid Zahoor Khan</p>
           <p>
             UniSlot — COMSATS University Islamabad, Attock Campus. Find available rooms, labs and
             teachers by time slot, and browse faculty and batch timetables.
