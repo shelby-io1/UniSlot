@@ -43,7 +43,10 @@ export async function GET(request: Request) {
       })),
     }));
 
-    return json({ mode: batch !== null ? "batch" : "teacher", days: byDay });
+    return json(
+      { mode: batch !== null ? "batch" : "teacher", days: byDay },
+      { headers: { "cache-control": "public, max-age=15, stale-while-revalidate=60" } },
+    );
   } catch (error) {
     console.error("timetable failed", error);
     return serverError("Unable to load timetable");

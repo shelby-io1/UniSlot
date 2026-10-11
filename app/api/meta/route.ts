@@ -7,7 +7,9 @@ export async function GET() {
   await connection();
   try {
     const db = await getDb();
-    return json(await getMeta(db));
+    return json(await getMeta(db), {
+      headers: { "cache-control": "public, max-age=30, stale-while-revalidate=120" },
+    });
   } catch (error) {
     console.error("meta failed", error);
     return serverError("Unable to load reference data");

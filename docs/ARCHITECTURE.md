@@ -15,8 +15,9 @@ Browser ──fetch──▶ Route Handlers ──▶ Services ──▶ Drizzle
 - **Route handlers** (`app/api/**/route.ts`) are thin: they validate input,
   call services, and serialise JSON.
 - **Services** (`lib/services/**`) contain pure, testable domain logic.
-- **`lib/db`** is a single facade that selects a driver at runtime and runs
-  migrations + seeding once per process.
+- **`lib/db`** is a single facade that selects a driver at runtime. The
+  in-memory PGlite driver migrates + seeds on first use; a persisted
+  `DATABASE_URL` database is provisioned once (see Database selection).
 
 ## Database selection
 
@@ -29,9 +30,14 @@ Browser ──fetch──▶ Route Handlers ──▶ Services ──▶ Drizzle
 
 ¹ Set `PGLITE_DATA_DIR` to persist the local PGlite instance to disk.
 
-Initialisation is memoised: the first call to `getDb()` creates the client,
-applies migrations from `drizzle/`, and seeds the dataset if the sessions table
-is empty. This is idempotent, so serverless cold starts are safe.
+Initialisation is memoised: the first call to `getDb()` creates the client.
+
+- **PGlite** (no `DATABASE_URL`) always applies migrations from `drizzle/` and
+  seeds the committed dataset, so tests and demo mode need no setup.
+- **Postgres/Neon** connects as-is. Provision a database once with
+  `npm run db:prepare` (or set `DB_AUTO_SETUP=1`) to migrate + seed it; leaving
+  setup out of the connection path avoids several round-trips on every cold
+  start. Seeding is idempotent — it is skipped when sessions already exist.
 
 ## Rendering and caching
 
@@ -40,6 +46,12 @@ Pages and components are cached explicitly with `use cache`; data is otherwise
 fetched at request time. The API handlers call `connection()` so they always run
 per request and are never prerendered with stale data. The home page is a static
 shell that streams client data.
+
+Read-only JSON endpoints set a short `Cache-Control` (`/api/meta` 30s,
+`/api/free` and `/api/timetable` 15s, all with `stale-while-revalidate`) so the
+browser can serve repeat lookups without a round-trip; admin mutations remain
+`no-store`. `/api/free` resolves the active term and reference lists in a single
+pass (`getFreeAvailability`) rather than loading the full metadata payload.
 
 The session-aware top bar (`components/site-header-server.tsx`) reads the admin
 cookie via `lib/admin/session.ts` and is streamed inside a `<Suspense>` boundary
@@ -143,7 +155,6 @@ components/
   uni-slot-app.tsx     client UI (the four public views)
   site-header.tsx      top bar client component (nav + Admin Panel / Sign out)
   site-header-server.tsx  server wrapper that reads the admin session
-  site-footer.tsx      footer (nav hidden on /admin)
   admin/               dashboard.tsx (tab shell + CRUD UI), dashboard-tab.tsx
                        (stats cards), audit-log.tsx (audit tab),
                        login.tsx (sign-in form), theme-picker.tsx (Appearance tab)

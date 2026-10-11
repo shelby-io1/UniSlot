@@ -25,23 +25,50 @@ export function describeDriver(): DriverInfo {
   return { driver: "pglite", persistent: Boolean(process.env.PGLITE_DATA_DIR) };
 }
 
+/**
+ * Whether a persisted (Neon) database should be migrated and seeded on every
+ * process start. Off by default: an already-provisioned Neon database does not
+ * need it, and running it on each cold start adds several network round-trips
+ * before the first real query. Set `DB_AUTO_SETUP=1` (or run `npm run
+ * db:prepare`) the first time you provision a database. The in-memory PGlite
+ * driver always sets up, so tests and demo mode need no configuration.
+ */
+function shouldAutoSetup(): boolean {
+  const flag = process.env.DB_AUTO_SETUP?.trim().toLowerCase();
+  return flag === "1" || flag === "true" || flag === "yes";
+}
+
+/** Migrate + seed a database. Shared by auto-setup and the `db:prepare` script. */
+export async function setupPostgres(db: Database): Promise<void> {
+  const [{ migrate }, { seedDatabase, ensureBatchSubjects }] = await Promise.all([
+    import("drizzle-orm/postgres-js/migrator"),
+    import("./seed"),
+  ]);
+  await migrate(db as never, { migrationsFolder: "drizzle" });
+  await seedDatabase(db);
+  await ensureBatchSubjects(db);
+}
+
 async function init(): Promise<Database> {
   const migrationsFolder = "drizzle";
 
   if (process.env.DATABASE_URL) {
-    const [{ drizzle }, { migrate }, { default: postgres }, { seedDatabase, ensureBatchSubjects }] =
-      await Promise.all([
-        import("drizzle-orm/postgres-js"),
-        import("drizzle-orm/postgres-js/migrator"),
-        import("postgres"),
-        import("./seed"),
-      ]);
+    const [{ drizzle }, { default: postgres }] = await Promise.all([
+      import("drizzle-orm/postgres-js"),
+      import("postgres"),
+    ]);
     const client = postgres(process.env.DATABASE_URL, { max: 5, prepare: false });
     activeClient = client as ClosableClient;
     const db = drizzle(client, { schema }) as unknown as Database;
-    await migrate(db as never, { migrationsFolder });
-    await seedDatabase(db);
-    await ensureBatchSubjects(db);
+    if (shouldAutoSetup()) {
+      const [{ migrate }, { seedDatabase, ensureBatchSubjects }] = await Promise.all([
+        import("drizzle-orm/postgres-js/migrator"),
+        import("./seed"),
+      ]);
+      await migrate(db as never, { migrationsFolder });
+      await seedDatabase(db);
+      await ensureBatchSubjects(db);
+    }
     return db;
   }
 

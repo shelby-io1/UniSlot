@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, type SQL } from "drizzle-orm";
 import type { Database } from "@/lib/db";
 import {
   academicTerms,
@@ -139,18 +139,7 @@ export async function getMeta(db: Database): Promise<Meta> {
 
 export type SessionFilter = { batchId?: number; teacherId?: number; dayIndex?: number };
 
-export async function getSessions(
-  db: Database,
-  filter: SessionFilter = {},
-): Promise<ResolvedSession[]> {
-  const termId = await getActiveTermId(db);
-  const conditions = [];
-  if (termId) conditions.push(eq(classSessions.termId, termId));
-  if (filter.batchId !== undefined) conditions.push(eq(classSessions.batchId, filter.batchId));
-  if (filter.teacherId !== undefined)
-    conditions.push(eq(classSessions.teacherId, filter.teacherId));
-  if (filter.dayIndex !== undefined) conditions.push(eq(classSessions.dayIndex, filter.dayIndex));
-
+async function loadSessionRows(db: Database, conditions: SQL[]): Promise<ResolvedSession[]> {
   const rows = await db
     .select({
       id: classSessions.id,
@@ -195,6 +184,59 @@ export async function getSessions(
     subjectTitle: r.subjectTitle,
     isRepeater: r.isRepeater,
   }));
+}
+
+export async function getSessions(
+  db: Database,
+  filter: SessionFilter = {},
+  termId?: number | null,
+): Promise<ResolvedSession[]> {
+  const activeTermId = termId === undefined ? await getActiveTermId(db) : termId;
+  const conditions: SQL[] = [];
+  if (activeTermId) conditions.push(eq(classSessions.termId, activeTermId));
+  if (filter.batchId !== undefined) conditions.push(eq(classSessions.batchId, filter.batchId));
+  if (filter.teacherId !== undefined)
+    conditions.push(eq(classSessions.teacherId, filter.teacherId));
+  if (filter.dayIndex !== undefined) conditions.push(eq(classSessions.dayIndex, filter.dayIndex));
+  return loadSessionRows(db, conditions);
+}
+
+export type FreeLookup =
+  | { ok: true; result: FreeResult }
+  | { ok: false; reason: "day" | "period" };
+
+/**
+ * Resolves the free/busy lists for a single slot in two database round-trips:
+ * the active term id, then the reference lists and that term's sessions in
+ * parallel. Far cheaper than `getMeta` + `getSessions` for the "Now" views.
+ */
+export async function getFreeAvailability(
+  db: Database,
+  kind: "rooms" | "teachers",
+  dayIndex: number,
+  slot: number,
+): Promise<FreeLookup> {
+  const termId = await getActiveTermId(db);
+  const [dayRows, periodRows, roomRows, teacherRows, sessions] = await Promise.all([
+    db.select({ id: workingDays.id }).from(workingDays),
+    db.select({ id: periods.id }).from(periods),
+    db.select({ id: rooms.id, name: rooms.name }).from(rooms).orderBy(asc(rooms.id)),
+    db.select({ id: teachers.id, name: teachers.name }).from(teachers).orderBy(asc(teachers.id)),
+    loadSessionRows(db, termId ? [eq(classSessions.termId, termId)] : []),
+  ]);
+
+  if (dayIndex < 0 || dayIndex >= dayRows.length) return { ok: false, reason: "day" };
+  if (slot < 0 || slot >= periodRows.length) return { ok: false, reason: "period" };
+
+  const roomsList: MetaRoom[] = roomRows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    group: assignRoomGroup(r.name),
+  }));
+  return {
+    ok: true,
+    result: computeFree(sessions, roomsList, teacherRows, dayIndex, slot, kind),
+  };
 }
 
 export type BusyRoom = { room: MetaRoom; entries: { batchLabel: string; teacherName: string | null }[] };

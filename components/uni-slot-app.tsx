@@ -88,7 +88,7 @@ export default function UniSlotApp({ view }: { view: UniSlotView }) {
   const [timetable, setTimetable] = useState<TimetableResult | null>(null);
 
   const loadMeta = useCallback(() => {
-    return fetch("/api/meta", { cache: "no-store" })
+    return fetch("/api/meta")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("Unable to reach the server"))))
       .then((data: Meta) => {
         setMeta(data);
@@ -138,9 +138,7 @@ export default function UniSlotApp({ view }: { view: UniSlotView }) {
   useEffect(() => {
     if (!meta || tab > 1) return;
     let cancelled = false;
-    fetch(`/api/free?kind=${tab === 0 ? "rooms" : "teachers"}&day=${day}&period=${slot}`, {
-      cache: "no-store",
-    })
+    fetch(`/api/free?kind=${tab === 0 ? "rooms" : "teachers"}&day=${day}&period=${slot}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("Failed to load availability"))))
       .then((data: FreeResult) => {
         if (!cancelled) setFree(data);
@@ -157,7 +155,7 @@ export default function UniSlotApp({ view }: { view: UniSlotView }) {
     if (!meta || tab < 2) return;
     let cancelled = false;
     const url = tab === 2 ? `/api/timetable?teacher=${tsel}` : `/api/timetable?batch=${bsel}`;
-    fetch(url, { cache: "no-store" })
+    fetch(url)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("Failed to load timetable"))))
       .then((data: TimetableResult) => {
         if (!cancelled) setTimetable(data);

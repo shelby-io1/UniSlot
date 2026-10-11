@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 import { badRequest, intParam, json, serverError } from "@/lib/api";
 import { getDb } from "@/lib/db";
-import { computeFree, getMeta, getSessions } from "@/lib/services/timetable";
+import { getFreeAvailability } from "@/lib/services/timetable";
 
 /**
  * GET /api/free?kind=rooms|teachers&day=0&period=0
@@ -23,13 +23,13 @@ export async function GET(request: Request) {
 
   try {
     const db = await getDb();
-    const meta = await getMeta(db);
-    if (day < 0 || day >= meta.days.length) return badRequest("day out of range");
-    if (period < 0 || period >= meta.periods.length) return badRequest("period out of range");
-
-    const sessions = await getSessions(db);
-    const result = computeFree(sessions, meta.rooms, meta.teachers, day, period, kind);
-    return json(result);
+    const lookup = await getFreeAvailability(db, kind, day, period);
+    if (!lookup.ok) {
+      return badRequest(lookup.reason === "day" ? "day out of range" : "period out of range");
+    }
+    return json(lookup.result, {
+      headers: { "cache-control": "public, max-age=15, stale-while-revalidate=60" },
+    });
   } catch (error) {
     console.error("free failed", error);
     return serverError("Unable to compute availability");

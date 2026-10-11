@@ -51,8 +51,10 @@ Browser ──fetch──▶ Route Handlers ──▶ Services ──▶ Drizzle
 - **Route handlers** (`app/api/**/route.ts`) are thin: validate input, call
   services, serialise JSON.
 - **Services** (`lib/services/**`) contain pure, testable domain logic.
-- **`lib/db`** is a single facade that selects a driver at runtime and runs
-  migrations + seeding once per process.
+- **`lib/db`** is a single facade that selects a driver at runtime. The
+  in-memory PGlite driver migrates + seeds on first use; a persisted
+  `DATABASE_URL` database is provisioned once with `npm run db:prepare` (see
+  Environment) and is not reseeded on every start.
 
 The four public views (matching the original CUISlot) are:
 
@@ -101,6 +103,7 @@ Vercel.
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | No | Neon/Postgres connection string. **Unset → in-memory PGlite.** |
+| `DB_AUTO_SETUP` | No | Set to `1` to migrate + seed `DATABASE_URL` on first connection. Leave unset; provision once with `npm run db:prepare` instead. |
 | `PGLITE_DATA_DIR` | No | Persist the local PGlite instance to disk instead of memory |
 | `ADMIN_TOKEN` | No | Shared secret for admin mutations. **Unset → admin writes return 503.** |
 | `BATCHWISE_PDF_PATH` | No | Override the Batchwise PDF path (default `data/source/Batchwise.pdf`) |
@@ -294,7 +297,6 @@ components/
   uni-slot-app.tsx     client UI for the four tool views (driven by a `view` prop)
   site-header.tsx      global top menu bar (+ Admin Panel link / Sign out button)
   site-header-server.tsx  server wrapper that reads the admin session for the bar
-  site-footer.tsx      global footer (developer details + navigation)
   admin/               dashboard.tsx (tab shell + CRUD tabs/forms/delete),
                        dashboard-tab.tsx (stats cards), audit-log.tsx (audit tab),
                        login.tsx (sign-in form), theme-picker.tsx (Appearance tab)
